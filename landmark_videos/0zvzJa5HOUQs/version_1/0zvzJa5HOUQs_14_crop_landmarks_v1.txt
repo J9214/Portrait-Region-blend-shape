@@ -1,0 +1,5 @@
+Video File: 0zvzJa5HOUQs_14_crop_landmarks_v1.mp4
+Video Length: 6.08 seconds
+Frame Size: 256x256
+FPS: 25.0
+Landmark Version: 1

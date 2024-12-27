@@ -6,8 +6,9 @@ import subprocess
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from utils.detected_face import visualize
+import argparse
 
-def cam_video(output_path="./slice_video_folder", min_detect_duration=5):
+def cam_video(output_path="./slice_videos", min_detect_duration=5):
     cap = cv.VideoCapture(0)
 
     base_options = python.BaseOptions(model_asset_path='./blaze_face_short_range.tflite')
@@ -22,8 +23,8 @@ def cam_video(output_path="./slice_video_folder", min_detect_duration=5):
     frame_width = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
     frame_height = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
     frame_size = (frame_width, frame_height)
-    #vid_output = cv.VideoWriter('./output.avi', cv.VideoWriter_fourcc('M', 'J', 'P', 'G'), 30, frame_size)
-    fourcc = cv.VideoWriter_fourcc('M', 'P', '4', 'V')  # Codec for output video
+
+    fourcc = cv.VideoWriter_fourcc('M', 'P', '4', 'V')
 
     folder_num = 1
     while os.path.exists(f"{output_path}/cam_{folder_num}"):
@@ -32,11 +33,10 @@ def cam_video(output_path="./slice_video_folder", min_detect_duration=5):
     output_folder = f"{output_path}/cam_{folder_num}"
     os.makedirs(output_folder, exist_ok=True)
 
-    start_time = None
     face_detected = False
     segment_index = 1
-    detected_duration = 0  # Duration face detected (in seconds)
-    out_writer = None  # To write the video segments
+    detected_duration = 0
+    out_writer = None 
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -61,7 +61,6 @@ def cam_video(output_path="./slice_video_folder", min_detect_duration=5):
                 detected_duration = 0
                 face_detected = True
 
-                # Start writing the new segment
                 segment_filename = os.path.join(output_folder, f"segment_{segment_index}.avi")
                 out_writer = cv.VideoWriter(segment_filename, fourcc, fps, frame_size)
 
@@ -70,9 +69,7 @@ def cam_video(output_path="./slice_video_folder", min_detect_duration=5):
                 bbox = detection.bounding_box
                 x_min, y_min = int(bbox.origin_x), int(bbox.origin_y)
                 x_max, y_max = x_min + int(bbox.width), y_min + int(bbox.height)
-                cv.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
 
-            # Write frame to video
             if out_writer:
                 out_writer.write(frame)
 
@@ -84,19 +81,15 @@ def cam_video(output_path="./slice_video_folder", min_detect_duration=5):
                 face_detected = False
                 detected_duration = 0
 
-                # Release writer for the current segment
                 if out_writer:
                     out_writer.release()
                     out_writer = None
 
-        # Display the frame with bounding boxes
         cv.imshow("Live Detection", frame)
 
-        # Break if 'q' is pressed
         if cv.waitKey(1) == ord('q'):
             break
 
-    # Handle last segment if still recording
     if face_detected and detected_duration >= min_detect_duration:
         print(f"Saved segment: segment_{segment_index}.mp4")
         if out_writer:
@@ -108,7 +101,11 @@ def cam_video(output_path="./slice_video_folder", min_detect_duration=5):
 
 def slice_video(input_path="./source_videos", output_path = "./slice_video_folder", min_detect_duration = 5):
     
-    VIDEO_FILES = [os.path.join(input_path, file) for file in os.listdir(input_path) if file.endswith((".mp4", ".avi", ".mov", ".webm"))]
+    if os.path.isdir(input_path) : 
+        VIDEO_FILES = [os.path.join(input_path, file) for file in os.listdir(input_path) if file.endswith((".mp4", ".avi", ".mov", ".webm"))]
+    else :
+        VIDEO_FILES = [input_path] if input_path.endswith((".mp4", ".avi", ".mov", ".webm")) else []
+
     
     if not VIDEO_FILES:
         print(f"Not Found VIDEO FILES")
@@ -127,17 +124,13 @@ def slice_video(input_path="./source_videos", output_path = "./slice_video_folde
             exit()
 
         fps = cap.get(cv.CAP_PROP_FPS)
-        frame_width = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
-        frame_height = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
         frame_count = int(cap.get(cv.CAP_PROP_FRAME_COUNT))
-        frame_size = (frame_width, frame_height)
         duration = frame_count / fps
 
-         # 자르기 관련 변수 초기화
         start_time = None
         face_detected = False
         segment_index = 1
-        detected_duration = 0  # 얼굴 검출 지속 시간 (초)
+        detected_duration = 0 
         
         output_folder = f"{output_path}/{os.path.basename(file).split(".")[0]}"
         if not os.path.exists(output_folder):
@@ -185,7 +178,6 @@ def slice_video(input_path="./source_videos", output_path = "./slice_video_folde
                 x_max, y_max = x_min + int(bbox.width), y_min + int(bbox.height)
                 cv.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
 
-            # Break if 'q' is pressed
             if cv.waitKey(1) == ord('q'):
                 break
         if face_detected and start_time is not None and detected_duration >= min_detect_duration:
@@ -201,13 +193,24 @@ def slice_video(input_path="./source_videos", output_path = "./slice_video_folde
             subprocess.run(command, check=True)
             print(f"Saved segment: {output_segment}")
 
-        # Release resources
         cap.release()
         cv.destroyAllWindows()
 
         print(f"Slicing complete for video: {file}")
 
-input_path = "./source_videos"
-output_path = "./slice_video_folder"
-cam_video(output_path, min_detect_duration=5)
-# slice_video(input_path, output_path, min_detect_duration=5)
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-c", "--camera", action="store_true")
+    parser.add_argument("-i", "--input", default="./source_videos")
+    parser.add_argument("-o", "--output", default="./slice_videos")
+    parser.add_argument("-md", "--min_duration", type=int, default=5)
+
+    args = parser.parse_args()
+
+    if args.camera:
+        cam_video(output_path=args.output, min_detect_duration=args.min_duration)
+    else:
+        slice_video(input_path=args.input, output_path=args.output, min_detect_duration=args.min_duration)
+
+if __name__ == "__main__":
+    main()

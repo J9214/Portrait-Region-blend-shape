@@ -7,88 +7,107 @@ from mediapipe.tasks.python import vision
 from utils.detected_face_landmark import draw_landmarks_on_image, plot_face_blendshapes_bar_graph
 from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
+import argparse
 
+def save_metadata(file_path, video_length, frame_size, fps, version):
+    """Save metadata for a given video."""
+    metadata_file = f"{os.path.splitext(file_path)[0]}.txt"
 
-def draw_landmark(input_path="./croped_folder", output_path="./landmark_videos"):
-    # 폴더 내 동영상 파일 차례로 접근
-    #VIDEO_FILES = os.listdir(input_path)
-    
-    video_folders = [os.path.join(input_path, folder) for folder in os.listdir(input_path) if os.path.isdir(os.path.join(input_path, folder))]
-
-    if not video_folders:
-        print(f"Not Fonund video_folders")
-        return
-    
-    if not os.path.exists(output_path):
-        os.makedirs(output_path)
-
-    base_options = python.BaseOptions(model_asset_path = './face_landmarker.task')
-    options = vision.FaceLandmarkerOptions(
-        base_options=base_options,
-        output_face_blendshapes=True,
-        output_facial_transformation_matrixes=True,
-        num_faces=1
+    metadata_content = (
+        f"Video File: {os.path.basename(file_path)}\n"
+        f"Video Length: {video_length:.2f} seconds\n"
+        f"Frame Size: {frame_size[0]}x{frame_size[1]}\n"
+        f"FPS: {fps}\n"
+        f"Landmark Version: {version}\n"
     )
-    detector = vision.FaceLandmarker.create_from_options(options)
-    version = 1
 
-    for folder in video_folders:
+    with open(metadata_file, "w") as file:
+        file.write(metadata_content)
 
-        # 2. 각 폴더 내의 동영상 파일 순회
-        video_files = [os.path.join(folder, file) for file in os.listdir(folder) if file.endswith((".mp4", ".avi", ".mov", ".webm"))]
+    print(f"Metadata saved to {metadata_file}")
+
+def draw_landmark(input_path, output_path, version):
+    def process_folder(folder_path, output_base_folder):
+        video_files = [os.path.join(folder_path, file) for file in os.listdir(folder_path) if file.endswith((".mp4", ".avi", ".mov", ".webm"))]
 
         if not video_files:
-            print(f"Not Fonund video_folders")
-            continue
-    
-        output_folder = f"{output_path}/{os.path.basename(folder)}"
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder)
+            return  # 비디오 파일이 없는 폴더는 스킵
+
+        # 현재 폴더의 이름을 가져와서 버전 폴더 경로 생성
+        folder_name = os.path.basename(folder_path)
+        version_folder = os.path.join(output_base_folder, folder_name, f"version_{version}")
+        
+        if not os.path.exists(version_folder):
+            os.makedirs(version_folder)
+
+        base_options = python.BaseOptions(model_asset_path='./face_landmarker.task')
+        options = vision.FaceLandmarkerOptions(
+            base_options=base_options,
+            output_face_blendshapes=True,
+            output_facial_transformation_matrixes=True,
+            num_faces=1
+        )
+        detector = vision.FaceLandmarker.create_from_options(options)
 
         for file in video_files:
-            cap = cv.VideoCapture(file) # 동영상
+            cap = cv.VideoCapture(file)
             
             if not cap.isOpened():
-                print("Error: Cannot open video")
-                exit()
+                print(f"Error: Cannot open video {file}")
+                continue
 
             fps = cap.get(cv.CAP_PROP_FPS)
             frame_width = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
             frame_height = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
-            frame_count = int(cap.get(cv.CAP_PROP_FRAME_COUNT))
             frame_size = (frame_width, frame_height)
+            video_length = cap.get(cv.CAP_PROP_FRAME_COUNT) / fps
+
+            video_name = os.path.splitext(os.path.basename(file))[0]
+            output_file_path = os.path.join(version_folder, f"{video_name}_landmarks_v{version}.mp4")
+            vid_output = cv.VideoWriter(output_file_path, cv.VideoWriter_fourcc(*'mp4v'), fps, frame_size)
 
             while cap.isOpened():
-                
                 ret, frame = cap.read()
                 if not ret:
-                    print("Video failed to read frame_read")
+                    print(f"Finished processing video: {file}")
                     break
-                
+
                 frame_rgb = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
                 mp_frame = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
                 detection_result = detector.detect(mp_frame)
 
-                key = cv.waitKey(1)
-                if key == ord('1'):
-                    version = 1
-                elif key == ord('2'):
-                    version = 2
-                elif key == ord('3'):
-                    version = 3
-                elif key == ord('4'): 
-                    version = 4
-
                 annotated_frame = draw_landmarks_on_image(cv.cvtColor(frame, cv.COLOR_BGR2RGB), detection_result, version)
                 annotated_cv_frame = cv.cvtColor(annotated_frame, cv.COLOR_RGB2BGR)
 
-                cv.imshow("Visualizing face landmark", annotated_cv_frame)             
+                vid_output.write(annotated_cv_frame)
 
-                if key == ord('q'):
+                if cv.waitKey(1) == ord('q'):
+                    print("Interrupted by user.")
                     break
 
             cap.release()
-            cv.destroyAllWindows()
+            vid_output.release()
+            save_metadata(output_file_path, video_length, frame_size, fps, version)
 
-input_path = './croped_folder'
-draw_landmark(input_path)
+    def recursive_process(folder_path, output_path):
+        for root, _, _ in os.walk(folder_path):
+            process_folder(root, output_path)
+
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+
+    recursive_process(input_path, output_path)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i", "--input", default="./cropped_videos")
+    parser.add_argument("-o", "--output", default="./landmark_videos")
+    parser.add_argument("-v", "--version", type=int, default=1)
+
+    args = parser.parse_args()
+
+    draw_landmark(input_path=args.input, output_path=args.output, version=args.version)
+
+if __name__ == "__main__":
+    main()

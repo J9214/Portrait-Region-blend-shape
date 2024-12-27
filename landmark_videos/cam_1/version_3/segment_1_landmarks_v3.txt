@@ -1,0 +1,5 @@
+Video File: segment_1_landmarks_v3.mp4
+Video Length: 7.37 seconds
+Frame Size: 640x480
+FPS: 30.0
+Landmark Version: 3

@@ -1,8 +1,9 @@
 import os
 import subprocess
 import csv
+import argparse
 
-def download_video(video_id, output_folder="./source_videos"):
+def download_video(video_id, output_folder):
     try:
         command = [
             "yt-dlp",
@@ -15,7 +16,7 @@ def download_video(video_id, output_folder="./source_videos"):
     except subprocess.CalledProcessError as e:
         print(f"동영상 다운로드 실패: {video_id}, Error: {e}")
 
-def downloads_video_from_csv(csv_file, output_folder="./source_videos"):
+def downloads_video_from_csv(csv_file, output_folder):
     try:
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)
@@ -36,7 +37,14 @@ def downloads_video_from_csv(csv_file, output_folder="./source_videos"):
     except Exception as e:
         print(f"오류 발생 : {e}")
 
-csv_file_path = "metadata.csv"
-output_folder = f"./source_videos"
-downloads_video_from_csv(csv_file_path, output_folder)
-    
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i", "--input", default="./metadata.csv")
+    parser.add_argument("-o", "--output", default="./source_videos")
+
+    args = parser.parse_args()
+
+    downloads_video_from_csv(csv_file=args.input, output_folder=args.output)
+
+if __name__ == "__main__":
+    main()
